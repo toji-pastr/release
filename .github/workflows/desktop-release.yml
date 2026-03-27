@@ -1,0 +1,153 @@
+name: Staging Desktop Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "Private source branch/tag to build"
+        required: false
+        default: "staging"
+
+permissions:
+  contents: write
+
+jobs:
+  build-mac:
+    runs-on: macos-15
+    steps:
+      - name: Checkout private source
+        uses: actions/checkout@v4
+        with:
+          repository: Lstsk/control-cheat
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          ref: ${{ inputs.source_ref }}
+          path: source
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: source/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: source
+        run: pnpm install
+
+      - name: Create desktop env
+        working-directory: source/desktop
+        shell: bash
+        env:
+          DESKTOP_API_BASE_URL: ${{ secrets.DESKTOP_API_BASE_URL }}
+          DESKTOP_BIFROST_PROXY_URL: ${{ secrets.DESKTOP_BIFROST_PROXY_URL }}
+          DESKTOP_SUPABASE_URL: ${{ secrets.DESKTOP_SUPABASE_URL }}
+          DESKTOP_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.DESKTOP_SUPABASE_PUBLISHABLE_KEY }}
+          DESKTOP_OAUTH_CLIENT_ID: ${{ secrets.DESKTOP_OAUTH_CLIENT_ID }}
+          DESKTOP_AUTH_WEB_BASE_URL: ${{ secrets.DESKTOP_AUTH_WEB_BASE_URL }}
+          DESKTOP_REALTIME_WS_URL: ${{ secrets.DESKTOP_REALTIME_WS_URL }}
+        run: |
+          cat > .env.production <<EOF
+          API_BASE_URL=${DESKTOP_API_BASE_URL}
+          BIFROST_PROXY_URL=${DESKTOP_BIFROST_PROXY_URL}
+          NEXT_PUBLIC_SUPABASE_URL=${DESKTOP_SUPABASE_URL}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${DESKTOP_SUPABASE_PUBLISHABLE_KEY}
+          DESKTOP_OAUTH_CLIENT_ID=${DESKTOP_OAUTH_CLIENT_ID}
+          AUTH_WEB_BASE_URL=${DESKTOP_AUTH_WEB_BASE_URL}
+          REALTIME_WS_URL=${DESKTOP_REALTIME_WS_URL}
+          NODE_ENV=production
+          EOF
+
+      - name: Prepare Apple API key
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          mkdir -p ~/private_keys
+          printf '%s' "$APPLE_API_KEY" | base64 --decode > ~/private_keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
+
+      - name: Build mac app
+        working-directory: source/desktop
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ~/private_keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: pnpm run dist:mac -- --arm64
+
+      - name: Upload mac artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-mac-staging
+          path: |
+            source/desktop/release/*.dmg
+            source/desktop/release/*.zip
+          if-no-files-found: error
+
+  build-win:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout private source
+        uses: actions/checkout@v4
+        with:
+          repository: Lstsk/control-cheat
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          ref: ${{ inputs.source_ref }}
+          path: source
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: source/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: source
+        run: pnpm install
+
+      - name: Create desktop env
+        working-directory: source/desktop
+        shell: pwsh
+        env:
+          DESKTOP_API_BASE_URL: ${{ secrets.DESKTOP_API_BASE_URL }}
+          DESKTOP_BIFROST_PROXY_URL: ${{ secrets.DESKTOP_BIFROST_PROXY_URL }}
+          DESKTOP_SUPABASE_URL: ${{ secrets.DESKTOP_SUPABASE_URL }}
+          DESKTOP_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.DESKTOP_SUPABASE_PUBLISHABLE_KEY }}
+          DESKTOP_OAUTH_CLIENT_ID: ${{ secrets.DESKTOP_OAUTH_CLIENT_ID }}
+          DESKTOP_AUTH_WEB_BASE_URL: ${{ secrets.DESKTOP_AUTH_WEB_BASE_URL }}
+          DESKTOP_REALTIME_WS_URL: ${{ secrets.DESKTOP_REALTIME_WS_URL }}
+        run: |
+          $envContent = @"
+          API_BASE_URL=$env:DESKTOP_API_BASE_URL
+          BIFROST_PROXY_URL=$env:DESKTOP_BIFROST_PROXY_URL
+          NEXT_PUBLIC_SUPABASE_URL=$env:DESKTOP_SUPABASE_URL
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$env:DESKTOP_SUPABASE_PUBLISHABLE_KEY
+          DESKTOP_OAUTH_CLIENT_ID=$env:DESKTOP_OAUTH_CLIENT_ID
+          AUTH_WEB_BASE_URL=$env:DESKTOP_AUTH_WEB_BASE_URL
+          REALTIME_WS_URL=$env:DESKTOP_REALTIME_WS_URL
+          NODE_ENV=production
+          "@.Trim()
+          $envContent | Set-Content -Path .env.production -Encoding ascii
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Build win app
+        working-directory: source/desktop
+        run: pnpm run dist:win
+
+      - name: Upload win artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-win-staging
+          path: |
+            source/desktop/release/*.exe
+          if-no-files-found: error
