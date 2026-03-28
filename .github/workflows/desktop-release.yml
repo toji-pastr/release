@@ -7,6 +7,8 @@ on:
         description: "Private source branch/tag to build"
         required: false
         default: "staging"
+  repository_dispatch:
+    types: [build-desktop-release]
 
 permissions:
   contents: write
@@ -20,7 +22,7 @@ jobs:
         with:
           repository: Lstsk/control-cheat
           token: ${{ secrets.SOURCE_REPO_TOKEN }}
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ github.event.inputs.source_ref || github.event.client_payload.source_ref || 'staging' }}
           path: source
 
       - name: Setup pnpm
@@ -94,7 +96,7 @@ jobs:
         with:
           repository: Lstsk/control-cheat
           token: ${{ secrets.SOURCE_REPO_TOKEN }}
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ github.event.inputs.source_ref || github.event.client_payload.source_ref || 'staging' }}
           path: source
 
       - name: Setup pnpm
