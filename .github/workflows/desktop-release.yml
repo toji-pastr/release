@@ -1,4 +1,4 @@
-name: Staging Desktop Build
+name: Desktop Build
 
 on:
   workflow_dispatch:
@@ -7,22 +7,72 @@ on:
         description: "Private source branch/tag to build"
         required: false
         default: "staging"
+      build_channel:
+        description: "Build channel"
+        required: false
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
   repository_dispatch:
-    types: [build-desktop-release]
+    types:
+      - build-desktop-staging
+      - build-desktop-release
 
 permissions:
   contents: write
 
+concurrency:
+  group: desktop-build-${{ github.event_name }}-${{ github.event_name == 'repository_dispatch' && github.event.action || inputs.build_channel || 'staging' }}
+  cancel-in-progress: ${{ (github.event_name == 'repository_dispatch' && github.event.action == 'build-desktop-staging') || (github.event_name == 'workflow_dispatch' && inputs.build_channel == 'staging') }}
+
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      source_ref: ${{ steps.vars.outputs.source_ref }}
+      build_channel: ${{ steps.vars.outputs.build_channel }}
+    steps:
+      - name: Resolve build inputs
+        id: vars
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            SOURCE_REF="${{ github.event.client_payload.source_ref }}"
+            if [[ "${{ github.event.action }}" == "build-desktop-release" ]]; then
+              BUILD_CHANNEL="production"
+            else
+              BUILD_CHANNEL="staging"
+            fi
+          else
+            SOURCE_REF="${{ inputs.source_ref }}"
+            BUILD_CHANNEL="${{ inputs.build_channel }}"
+          fi
+
+          echo "source_ref=${SOURCE_REF:-staging}" >> "$GITHUB_OUTPUT"
+          echo "build_channel=${BUILD_CHANNEL:-staging}" >> "$GITHUB_OUTPUT"
+
   build-mac:
-    runs-on: macos-15
+    runs-on: ${{ matrix.os }}
+    needs: prepare
+    environment: ${{ needs.prepare.outputs.build_channel }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            arch: arm64
+          - os: macos-15-intel
+            arch: x64
+
     steps:
       - name: Checkout private source
         uses: actions/checkout@v4
         with:
           repository: Lstsk/control-cheat
           token: ${{ secrets.SOURCE_REPO_TOKEN }}
-          ref: ${{ github.event.inputs.source_ref || github.event.client_payload.source_ref || 'staging' }}
+          ref: ${{ needs.prepare.outputs.source_ref }}
           path: source
 
       - name: Setup pnpm
@@ -79,26 +129,28 @@ jobs:
           APPLE_API_KEY: ~/private_keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-        run: pnpm run dist:mac -- --arm64
+        run: pnpm run dist:mac -- --${{ matrix.arch }}
 
       - name: Upload mac artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-mac-staging
+          name: desktop-mac-${{ needs.prepare.outputs.build_channel }}-${{ matrix.arch }}
           path: |
             source/desktop/release/*.dmg
-            source/desktop/release/*.zip
           if-no-files-found: error
 
   build-win:
     runs-on: windows-latest
+    needs: prepare
+    environment: ${{ needs.prepare.outputs.build_channel }}
+
     steps:
       - name: Checkout private source
         uses: actions/checkout@v4
         with:
           repository: Lstsk/control-cheat
           token: ${{ secrets.SOURCE_REPO_TOKEN }}
-          ref: ${{ github.event.inputs.source_ref || github.event.client_payload.source_ref || 'staging' }}
+          ref: ${{ needs.prepare.outputs.source_ref }}
           path: source
 
       - name: Setup pnpm
@@ -141,11 +193,6 @@ jobs:
           "@.Trim()
           $envContent | Set-Content -Path .env.production -Encoding ascii
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "8.0.x"
-
       - name: Build win app
         working-directory: source/desktop
         run: pnpm run dist:win
@@ -153,7 +200,7 @@ jobs:
       - name: Upload win artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-win-staging
+          name: desktop-win-${{ needs.prepare.outputs.build_channel }}
           path: |
             source/desktop/release/*.exe
           if-no-files-found: error
