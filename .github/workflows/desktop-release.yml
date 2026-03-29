@@ -23,6 +23,9 @@ on:
 permissions:
   contents: write
 
+env:
+  RETAIN_PREVIOUS_RELEASES: 5
+
 concurrency:
   group: desktop-build-${{ github.event_name }}-${{ github.event_name == 'repository_dispatch' && github.event.action || inputs.build_channel || 'staging' }}
   cancel-in-progress: ${{ (github.event_name == 'repository_dispatch' && github.event.action == 'build-desktop-staging') || (github.event_name == 'workflow_dispatch' && inputs.build_channel == 'staging') }}
@@ -33,6 +36,7 @@ jobs:
     outputs:
       source_ref: ${{ steps.vars.outputs.source_ref }}
       build_channel: ${{ steps.vars.outputs.build_channel }}
+      release_tag: ${{ steps.vars.outputs.release_tag }}
     steps:
       - name: Resolve build inputs
         id: vars
@@ -52,6 +56,18 @@ jobs:
 
           echo "source_ref=${SOURCE_REF:-staging}" >> "$GITHUB_OUTPUT"
           echo "build_channel=${BUILD_CHANNEL:-staging}" >> "$GITHUB_OUTPUT"
+
+          if [[ "${BUILD_CHANNEL:-staging}" == "production" ]]; then
+            RELEASE_TAG="${SOURCE_REF:-}"
+            if [[ -z "${RELEASE_TAG}" ]]; then
+              echo "Production builds require a source_ref tag." >&2
+              exit 1
+            fi
+            if [[ "${RELEASE_TAG}" != v* ]]; then
+              RELEASE_TAG="v${RELEASE_TAG}"
+            fi
+            echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          fi
 
   build-mac:
     runs-on: ${{ matrix.os }}
@@ -204,3 +220,103 @@ jobs:
           path: |
             source/desktop/release/*.exe
           if-no-files-found: error
+
+  publish-production:
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+      - build-mac
+      - build-win
+    if: needs.prepare.outputs.build_channel == 'production'
+    environment: production
+
+    steps:
+      - name: Checkout public release repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: desktop/release
+          merge-multiple: true
+
+      - name: Create stable download aliases
+        run: node scripts/alias-release.mjs desktop/release
+
+      - name: Generate checksums
+        run: node scripts/hash-release.mjs desktop/release checksums.txt
+
+      - name: Verify release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -la desktop/release
+          test -f desktop/release/System-Audio-Service-Setup.exe
+          test -f desktop/release/System-Audio-Service-arm64.dmg
+          test -f desktop/release/System-Audio-Service-x64.dmg
+          test -f desktop/release/checksums.txt
+
+      - name: Build manifest
+        env:
+          DOWNLOAD_PUBLIC_BASE_URL: ${{ secrets.DOWNLOAD_PUBLIC_BASE_URL }}
+        run: |
+          set -euo pipefail
+          node scripts/build-release-manifest.mjs \
+            desktop/release \
+            "${{ needs.prepare.outputs.release_tag }}" \
+            "${DOWNLOAD_PUBLIC_BASE_URL}"
+
+      - name: Upload production release to Cloudflare R2
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_REGION: auto
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+        run: |
+          set -euo pipefail
+          : "${R2_BUCKET:?Missing R2_BUCKET secret}"
+          : "${R2_ENDPOINT_URL:?Missing R2_ENDPOINT_URL secret}"
+          : "${AWS_ACCESS_KEY_ID:?Missing R2_ACCESS_KEY_ID secret}"
+          : "${AWS_SECRET_ACCESS_KEY:?Missing R2_SECRET_ACCESS_KEY secret}"
+
+          aws --version
+
+          aws s3 sync desktop/release "s3://${R2_BUCKET}/${{ needs.prepare.outputs.release_tag }}/" \
+            --endpoint-url "${R2_ENDPOINT_URL}" \
+            --exclude "*" \
+            --include "*.dmg" \
+            --include "*.exe" \
+            --include "checksums.txt" \
+            --include "manifest.json"
+
+          aws s3 sync desktop/release "s3://${R2_BUCKET}/latest/" \
+            --endpoint-url "${R2_ENDPOINT_URL}" \
+            --delete \
+            --exclude "*" \
+            --include "*.dmg" \
+            --include "*.exe" \
+            --include "checksums.txt" \
+            --include "manifest.json"
+
+          aws s3 cp desktop/release/manifest.json "s3://${R2_BUCKET}/manifest.json" \
+            --endpoint-url "${R2_ENDPOINT_URL}"
+
+      - name: Prune old Cloudflare R2 releases
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_REGION: auto
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+        run: |
+          set -euo pipefail
+          node scripts/prune-release-prefixes.mjs desktop/release/manifest.json
