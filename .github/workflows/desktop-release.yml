@@ -63,8 +63,9 @@ jobs:
               echo "Production builds require a source_ref tag." >&2
               exit 1
             fi
-            if [[ "${RELEASE_TAG}" != v* ]]; then
-              RELEASE_TAG="v${RELEASE_TAG}"
+            if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Production builds require a semver tag like v1.0.0. Received: ${RELEASE_TAG}" >&2
+              exit 1
             fi
             echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
           fi
@@ -86,7 +87,7 @@ jobs:
       - name: Checkout private source
         uses: actions/checkout@v4
         with:
-          repository: Lstsk/control-cheat
+          repository: Lstsk/control
           token: ${{ secrets.SOURCE_REPO_TOKEN }}
           ref: ${{ needs.prepare.outputs.source_ref }}
           path: source
@@ -172,7 +173,7 @@ jobs:
       - name: Checkout private source
         uses: actions/checkout@v4
         with:
-          repository: Lstsk/control-cheat
+          repository: Lstsk/control
           token: ${{ secrets.SOURCE_REPO_TOKEN }}
           ref: ${{ needs.prepare.outputs.source_ref }}
           path: source
