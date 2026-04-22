@@ -112,6 +112,7 @@ jobs:
         working-directory: source/apps/desktop
         shell: bash
         env:
+          BUILD_CHANNEL: ${{ needs.prepare.outputs.build_channel }}
           DESKTOP_API_BASE_URL: ${{ secrets.DESKTOP_API_BASE_URL }}
           DESKTOP_BIFROST_PROXY_URL: ${{ secrets.DESKTOP_BIFROST_PROXY_URL }}
           DESKTOP_SUPABASE_URL: ${{ secrets.DESKTOP_SUPABASE_URL }}
@@ -120,7 +121,8 @@ jobs:
           DESKTOP_AUTH_WEB_BASE_URL: ${{ secrets.DESKTOP_AUTH_WEB_BASE_URL }}
           DESKTOP_REALTIME_WS_URL: ${{ secrets.DESKTOP_REALTIME_WS_URL }}
         run: |
-          cat > .env.production <<EOF
+          cat > ".env.${BUILD_CHANNEL}" <<EOF
+          APP_ENV=${BUILD_CHANNEL}
           API_BASE_URL=${DESKTOP_API_BASE_URL}
           BIFROST_PROXY_URL=${DESKTOP_BIFROST_PROXY_URL}
           NEXT_PUBLIC_SUPABASE_URL=${DESKTOP_SUPABASE_URL}
@@ -148,6 +150,7 @@ jobs:
       - name: Build mac app
         working-directory: source/apps/desktop
         env:
+          APP_ENV: ${{ needs.prepare.outputs.build_channel }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
@@ -198,6 +201,7 @@ jobs:
         working-directory: source/apps/desktop
         shell: pwsh
         env:
+          BUILD_CHANNEL: ${{ needs.prepare.outputs.build_channel }}
           DESKTOP_API_BASE_URL: ${{ secrets.DESKTOP_API_BASE_URL }}
           DESKTOP_BIFROST_PROXY_URL: ${{ secrets.DESKTOP_BIFROST_PROXY_URL }}
           DESKTOP_SUPABASE_URL: ${{ secrets.DESKTOP_SUPABASE_URL }}
@@ -206,7 +210,9 @@ jobs:
           DESKTOP_AUTH_WEB_BASE_URL: ${{ secrets.DESKTOP_AUTH_WEB_BASE_URL }}
           DESKTOP_REALTIME_WS_URL: ${{ secrets.DESKTOP_REALTIME_WS_URL }}
         run: |
+          $buildChannel = $env:BUILD_CHANNEL
           $envContent = @"
+          APP_ENV=$buildChannel
           API_BASE_URL=$env:DESKTOP_API_BASE_URL
           BIFROST_PROXY_URL=$env:DESKTOP_BIFROST_PROXY_URL
           NEXT_PUBLIC_SUPABASE_URL=$env:DESKTOP_SUPABASE_URL
@@ -216,10 +222,12 @@ jobs:
           REALTIME_WS_URL=$env:DESKTOP_REALTIME_WS_URL
           NODE_ENV=production
           "@.Trim()
-          $envContent | Set-Content -Path .env.production -Encoding ascii
+          $envContent | Set-Content -Path ".env.$buildChannel" -Encoding ascii
 
       - name: Build win app
         working-directory: source/apps/desktop
+        env:
+          APP_ENV: ${{ needs.prepare.outputs.build_channel }}
         run: pnpm run dist:win
 
       - name: Upload win artifacts
