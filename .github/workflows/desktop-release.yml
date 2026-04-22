@@ -109,7 +109,7 @@ jobs:
         run: pnpm install
 
       - name: Create desktop env
-        working-directory: source/desktop
+        working-directory: source/apps/desktop
         shell: bash
         env:
           DESKTOP_API_BASE_URL: ${{ secrets.DESKTOP_API_BASE_URL }}
@@ -146,7 +146,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Build mac app
-        working-directory: source/desktop
+        working-directory: source/apps/desktop
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -161,7 +161,7 @@ jobs:
         with:
           name: desktop-mac-${{ needs.prepare.outputs.build_channel }}-${{ matrix.arch }}
           path: |
-            source/desktop/release/*.dmg
+            source/apps/desktop/release/*.dmg
           if-no-files-found: error
 
   build-win:
@@ -195,7 +195,7 @@ jobs:
         run: pnpm install
 
       - name: Create desktop env
-        working-directory: source/desktop
+        working-directory: source/apps/desktop
         shell: pwsh
         env:
           DESKTOP_API_BASE_URL: ${{ secrets.DESKTOP_API_BASE_URL }}
@@ -219,7 +219,7 @@ jobs:
           $envContent | Set-Content -Path .env.production -Encoding ascii
 
       - name: Build win app
-        working-directory: source/desktop
+        working-directory: source/apps/desktop
         run: pnpm run dist:win
 
       - name: Upload win artifacts
@@ -227,7 +227,7 @@ jobs:
         with:
           name: desktop-win-${{ needs.prepare.outputs.build_channel }}
           path: |
-            source/desktop/release/*.exe
+            source/apps/desktop/release/*.exe
           if-no-files-found: error
 
   publish-production:
