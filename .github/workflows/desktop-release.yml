@@ -85,7 +85,7 @@ jobs:
 
     steps:
       - name: Checkout private source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: Lstsk/control
           token: ${{ secrets.SOURCE_REPO_TOKEN }}
@@ -93,12 +93,12 @@ jobs:
           path: source
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10.33.0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: pnpm
@@ -160,7 +160,7 @@ jobs:
           pnpm run dist:mac -- --${{ matrix.arch }}
 
       - name: Upload mac artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: desktop-mac-${{ needs.prepare.outputs.build_channel }}-${{ matrix.arch }}
           path: |
@@ -174,7 +174,7 @@ jobs:
 
     steps:
       - name: Checkout private source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: Lstsk/control
           token: ${{ secrets.SOURCE_REPO_TOKEN }}
@@ -182,12 +182,12 @@ jobs:
           path: source
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10.33.0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: pnpm
@@ -231,7 +231,7 @@ jobs:
         run: pnpm run dist:win
 
       - name: Upload win artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: desktop-win-${{ needs.prepare.outputs.build_channel }}
           path: |
@@ -249,15 +249,15 @@ jobs:
 
     steps:
       - name: Checkout public release repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: desktop-*
           path: desktop/release
