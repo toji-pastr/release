@@ -39,15 +39,15 @@ The token must have read-only access to `Lstsk/control`. Workflow checkouts use 
 
 `CONTROL_GHCR_TOKEN` is a dedicated classic personal access token with `write:packages` access. The repository variable `CONTROL_GHCR_USERNAME` identifies its owner. Using a dedicated package credential keeps the private packages independent from the public repository's inherited Actions access.
 
-The existing `staging` and `production` GitHub environments require these variables:
+The existing `staging` and `production` GitHub environments already provide these public client values as desktop release secrets:
 
 ```text
-CONTROL_WEB_APP_URL
-CONTROL_SUPABASE_URL
-CONTROL_SUPABASE_PUBLISHABLE_KEY
+DESKTOP_API_BASE_URL
+DESKTOP_SUPABASE_URL
+DESKTOP_SUPABASE_PUBLISHABLE_KEY
 ```
 
-They are public client configuration compiled into the Next.js browser bundle. Do not place server credentials in these variables.
+The container workflow reuses them for the matching Next.js build. They are public client configuration compiled into browser bundles; no privileged desktop or server secret is passed to Docker.
 
 Optional deployment requires these environment secrets:
 
