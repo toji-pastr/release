@@ -231,18 +231,38 @@ jobs:
     if: needs.prepare.outputs.should_deploy == 'true'
     runs-on: ubuntu-24.04
     environment: ${{ needs.prepare.outputs.build_channel }}
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
+      - name: Connect to the deployment tailnet
+        uses: tailscale/github-action@306e68a486fd2350f2bfc3b19fcd143891a4a2d8 # v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          tags: tag:control-deploy
+          ping: ${{ vars.CONTROL_COOLIFY_TAILSCALE_IP }}
+
       - name: Trigger allowlisted Control deployment
         env:
+          COOLIFY_TAILSCALE_IP: ${{ vars.CONTROL_COOLIFY_TAILSCALE_IP }}
           COOLIFY_TOKEN: ${{ secrets.CONTROL_COOLIFY_TOKEN }}
           COOLIFY_WEBHOOK: ${{ secrets.CONTROL_COOLIFY_WEBHOOK }}
         shell: bash
         run: |
           set -euo pipefail
+          : "${COOLIFY_TAILSCALE_IP:?Missing CONTROL_COOLIFY_TAILSCALE_IP environment variable}"
           : "${COOLIFY_TOKEN:?Missing CONTROL_COOLIFY_TOKEN environment secret}"
           : "${COOLIFY_WEBHOOK:?Missing CONTROL_COOLIFY_WEBHOOK environment secret}"
 
+          if [[ ! "${COOLIFY_WEBHOOK}" =~ ^https://([^/:]+)/ ]]; then
+            echo "CONTROL_COOLIFY_WEBHOOK must use HTTPS." >&2
+            exit 1
+          fi
+          COOLIFY_HOST="${BASH_REMATCH[1]}"
+
           curl --fail-with-body --silent --show-error \
+            --resolve "${COOLIFY_HOST}:443:${COOLIFY_TAILSCALE_IP}" \
             --request GET "${COOLIFY_WEBHOOK}" \
             --header "Authorization: Bearer ${COOLIFY_TOKEN}"

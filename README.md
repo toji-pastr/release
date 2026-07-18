@@ -1,8 +1,8 @@
-# Release Runner
+# Control Release Runner
 
-Public GitHub-hosted build and release automation for explicitly trusted projects.
+Public GitHub-hosted build and release automation for Control.
 
-This repository is a multi-project runner repository, not a public build service. Every project must have a reviewed workflow that fixes its source repository, Dockerfiles, image names, release channels, and deployment targets. Dispatch payloads must never be allowed to provide arbitrary repositories, Dockerfiles, shell commands, registry destinations, or webhooks.
+This repository is part of the Control software project, not a general-purpose runner or public build service. Its workflows fix the source repository, Dockerfiles, image names, release channels, and deployment targets. Dispatch payloads must never be allowed to provide arbitrary repositories, Dockerfiles, shell commands, registry destinations, or webhooks.
 
 ## Projects
 
@@ -11,7 +11,7 @@ This repository is a multi-project runner repository, not a public build service
 | Control desktop | `Lstsk/control` | `desktop-release.yml` | Signed desktop release artifacts |
 | Control containers | `Lstsk/control` | `control-containers.yml` | Private `control-web` and `control-realtime` GHCR images |
 
-Additional repositories owned or controlled by the operator can be added with their own project-specific workflow. Untrusted or arbitrary third-party source must not run in jobs that can access source, registry, signing, or deployment credentials.
+Unrelated projects and untrusted or arbitrary third-party source must not run in jobs that can access source, registry, signing, or deployment credentials.
 
 ## Control Container Flow
 
@@ -20,7 +20,8 @@ Additional repositories owned or controlled by the operator can be added with th
 3. Two public GitHub-hosted runners build the fixed web and realtime Dockerfiles in parallel.
 4. Each image is pushed with an immutable `sha-<source-sha>` tag.
 5. After both builds succeed, the workflow promotes the matching channel tags.
-6. If deployment is enabled, the matching Coolify environment webhook is called.
+6. If deployment is enabled, the deploy job joins the private tailnet as an ephemeral tagged node.
+7. The matching Coolify environment webhook is called through the VPS's Tailscale address.
 
 The workflow does not accept a source repository, Dockerfile, image name, command, registry, or webhook from its event payload.
 
@@ -54,9 +55,17 @@ Optional deployment requires these environment secrets:
 ```text
 CONTROL_COOLIFY_WEBHOOK
 CONTROL_COOLIFY_TOKEN
+TS_OAUTH_CLIENT_ID
+TS_AUDIENCE
 ```
 
-The Coolify token should have deploy permission only.
+It also requires this environment variable:
+
+```text
+CONTROL_COOLIFY_TAILSCALE_IP
+```
+
+The Coolify token should have deploy permission only. The Tailscale federated identity must be restricted to this repository's deployment environment, have only the auth-key scope needed to create ephemeral nodes, and assign `tag:control-deploy`. Tailnet policy should permit that tag to reach only the Coolify VPS on HTTPS. The workflow routes the public Coolify hostname to `CONTROL_COOLIFY_TAILSCALE_IP`, preserving TLS verification while keeping the API connection private.
 
 ## GHCR Packages
 
@@ -81,12 +90,12 @@ Before enabling automatic deployments:
 4. Configure Coolify to pull the images and verify application health.
 5. Enable the private source repository's deployment variable only after the webhook path succeeds.
 
-## Adding Another Trusted Project
+## Repository Scope
 
-Add a separate workflow with fixed project values and reuse the same lifecycle:
+Keep this repository associated with Control releases. Its lifecycle is:
 
 ```text
 validate input -> resolve trusted source SHA -> build immutable images -> promote channel -> optional fixed deployment
 ```
 
-Keep credentials scoped per project or GitHub environment. Do not turn project settings into externally supplied dispatch inputs merely to reduce workflow duplication.
+Keep credentials scoped by GitHub environment. Do not turn project settings into externally supplied dispatch inputs or use this repository as free compute for unrelated projects.
