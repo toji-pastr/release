@@ -1,0 +1,248 @@
+name: Control Containers
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Exact Control commit for production; a branch or commit for staging
+        required: true
+        default: staging
+      build_channel:
+        description: Image channel and GitHub environment
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+      deploy:
+        description: Trigger Coolify after both images are promoted
+        required: true
+        default: false
+        type: boolean
+  repository_dispatch:
+    types:
+      - build-control-containers
+
+permissions:
+  contents: read
+
+concurrency:
+  group: control-containers-${{ github.event_name == 'repository_dispatch' && github.event.client_payload.build_channel || inputs.build_channel || 'staging' }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    name: Resolve trusted source
+    runs-on: ubuntu-24.04
+    outputs:
+      build_channel: ${{ steps.inputs.outputs.build_channel }}
+      should_deploy: ${{ steps.inputs.outputs.should_deploy }}
+      source_sha: ${{ steps.source.outputs.source_sha }}
+
+    steps:
+      - name: Resolve workflow inputs
+        id: inputs
+        env:
+          DISPATCH_CHANNEL: ${{ github.event.client_payload.build_channel }}
+          DISPATCH_DEPLOY: ${{ github.event.client_payload.deploy }}
+          DISPATCH_REF: ${{ github.event.client_payload.source_ref }}
+          MANUAL_CHANNEL: ${{ inputs.build_channel }}
+          MANUAL_DEPLOY: ${{ inputs.deploy }}
+          MANUAL_REF: ${{ inputs.source_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_EVENT_NAME}" == "repository_dispatch" ]]; then
+            SOURCE_REF="${DISPATCH_REF}"
+            BUILD_CHANNEL="${DISPATCH_CHANNEL}"
+            SHOULD_DEPLOY="${DISPATCH_DEPLOY:-false}"
+          else
+            SOURCE_REF="${MANUAL_REF}"
+            BUILD_CHANNEL="${MANUAL_CHANNEL}"
+            SHOULD_DEPLOY="${MANUAL_DEPLOY:-false}"
+          fi
+
+          : "${SOURCE_REF:?Missing source_ref}"
+          case "${BUILD_CHANNEL}" in
+            staging|production)
+              ;;
+            *)
+              echo "Unsupported build channel: ${BUILD_CHANNEL}" >&2
+              exit 1
+              ;;
+          esac
+
+          if [[ "${BUILD_CHANNEL}" == "production" && ! "${SOURCE_REF}" =~ ^[0-9a-f]{40,64}$ ]]; then
+            echo "Production container builds require an exact source commit SHA." >&2
+            exit 1
+          fi
+
+          if [[ "${SHOULD_DEPLOY}" == "true" ]]; then
+            SHOULD_DEPLOY=true
+          else
+            SHOULD_DEPLOY=false
+          fi
+
+          {
+            echo "source_ref=${SOURCE_REF}"
+            echo "build_channel=${BUILD_CHANNEL}"
+            echo "should_deploy=${SHOULD_DEPLOY}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Check out allowlisted Control source
+        uses: actions/checkout@v6
+        with:
+          repository: Lstsk/control
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          ref: ${{ steps.inputs.outputs.source_ref }}
+          path: source
+          persist-credentials: false
+
+      - name: Resolve source commit
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_SHA="$(git -C source rev-parse HEAD)"
+          if [[ ! "${SOURCE_SHA}" =~ ^[0-9a-f]{40,64}$ ]]; then
+            echo "Unexpected source commit: ${SOURCE_SHA}" >&2
+            exit 1
+          fi
+          echo "source_sha=${SOURCE_SHA}" >> "${GITHUB_OUTPUT}"
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: prepare
+    runs-on: ubuntu-24.04
+    environment: ${{ needs.prepare.outputs.build_channel }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: web
+            dockerfile: apps/web/Dockerfile
+            image: ghcr.io/toji-pastr/control-web
+          - target: realtime
+            dockerfile: apps/realtime/Dockerfile
+            image: ghcr.io/toji-pastr/control-realtime
+
+    steps:
+      - name: Check out allowlisted Control source
+        uses: actions/checkout@v6
+        with:
+          repository: Lstsk/control
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          path: source
+          persist-credentials: false
+
+      - name: Prepare web build arguments
+        id: build-args
+        if: matrix.target == 'web'
+        env:
+          APP_ENV: ${{ needs.prepare.outputs.build_channel }}
+          WEB_APP_URL: ${{ vars.CONTROL_WEB_APP_URL }}
+          WEB_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CONTROL_SUPABASE_PUBLISHABLE_KEY }}
+          WEB_SUPABASE_URL: ${{ vars.CONTROL_SUPABASE_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${WEB_APP_URL:?Missing CONTROL_WEB_APP_URL environment variable}"
+          : "${WEB_SUPABASE_URL:?Missing CONTROL_SUPABASE_URL environment variable}"
+          : "${WEB_SUPABASE_PUBLISHABLE_KEY:?Missing CONTROL_SUPABASE_PUBLISHABLE_KEY environment variable}"
+
+          {
+            echo "value<<EOF"
+            echo "APP_ENV=${APP_ENV}"
+            echo "NEXT_PUBLIC_APP_URL=${WEB_APP_URL}"
+            echo "NEXT_PUBLIC_SUPABASE_URL=${WEB_SUPABASE_URL}"
+            echo "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${WEB_SUPABASE_PUBLISHABLE_KEY}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ vars.CONTROL_GHCR_USERNAME }}
+          password: ${{ secrets.CONTROL_GHCR_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and publish immutable image
+        uses: docker/build-push-action@v6
+        with:
+          context: source
+          file: source/${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ matrix.image }}:sha-${{ needs.prepare.outputs.source_sha }}
+          build-args: ${{ steps.build-args.outputs.value }}
+          labels: |
+            org.opencontainers.image.revision=${{ needs.prepare.outputs.source_sha }}
+            org.opencontainers.image.title=Control ${{ matrix.target }}
+
+  promote:
+    name: Promote ${{ needs.prepare.outputs.build_channel }} images
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-24.04
+    environment: ${{ needs.prepare.outputs.build_channel }}
+
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ vars.CONTROL_GHCR_USERNAME }}
+          password: ${{ secrets.CONTROL_GHCR_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Promote matching image pair
+        env:
+          BUILD_CHANNEL: ${{ needs.prepare.outputs.build_channel }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker buildx imagetools inspect "ghcr.io/toji-pastr/control-web:sha-${SOURCE_SHA}" >/dev/null
+          docker buildx imagetools inspect "ghcr.io/toji-pastr/control-realtime:sha-${SOURCE_SHA}" >/dev/null
+
+          docker buildx imagetools create \
+            --tag "ghcr.io/toji-pastr/control-web:${BUILD_CHANNEL}" \
+            "ghcr.io/toji-pastr/control-web:sha-${SOURCE_SHA}"
+
+          docker buildx imagetools create \
+            --tag "ghcr.io/toji-pastr/control-realtime:${BUILD_CHANNEL}" \
+            "ghcr.io/toji-pastr/control-realtime:sha-${SOURCE_SHA}"
+
+  deploy:
+    name: Deploy through Coolify
+    needs:
+      - prepare
+      - promote
+    if: needs.prepare.outputs.should_deploy == 'true'
+    runs-on: ubuntu-24.04
+    environment: ${{ needs.prepare.outputs.build_channel }}
+
+    steps:
+      - name: Trigger allowlisted Control deployment
+        env:
+          COOLIFY_TOKEN: ${{ secrets.CONTROL_COOLIFY_TOKEN }}
+          COOLIFY_WEBHOOK: ${{ secrets.CONTROL_COOLIFY_WEBHOOK }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${COOLIFY_TOKEN:?Missing CONTROL_COOLIFY_TOKEN environment secret}"
+          : "${COOLIFY_WEBHOOK:?Missing CONTROL_COOLIFY_WEBHOOK environment secret}"
+
+          curl --fail-with-body --silent --show-error \
+            --request GET "${COOLIFY_WEBHOOK}" \
+            --header "Authorization: Bearer ${COOLIFY_TOKEN}"
