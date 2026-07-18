@@ -143,15 +143,15 @@ jobs:
         if: matrix.target == 'web'
         env:
           APP_ENV: ${{ needs.prepare.outputs.build_channel }}
-          WEB_APP_URL: ${{ vars.CONTROL_WEB_APP_URL }}
-          WEB_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CONTROL_SUPABASE_PUBLISHABLE_KEY }}
-          WEB_SUPABASE_URL: ${{ vars.CONTROL_SUPABASE_URL }}
+          WEB_APP_URL: ${{ secrets.DESKTOP_API_BASE_URL }}
+          WEB_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.DESKTOP_SUPABASE_PUBLISHABLE_KEY }}
+          WEB_SUPABASE_URL: ${{ secrets.DESKTOP_SUPABASE_URL }}
         shell: bash
         run: |
           set -euo pipefail
-          : "${WEB_APP_URL:?Missing CONTROL_WEB_APP_URL environment variable}"
-          : "${WEB_SUPABASE_URL:?Missing CONTROL_SUPABASE_URL environment variable}"
-          : "${WEB_SUPABASE_PUBLISHABLE_KEY:?Missing CONTROL_SUPABASE_PUBLISHABLE_KEY environment variable}"
+          : "${WEB_APP_URL:?Missing DESKTOP_API_BASE_URL environment secret}"
+          : "${WEB_SUPABASE_URL:?Missing DESKTOP_SUPABASE_URL environment secret}"
+          : "${WEB_SUPABASE_PUBLISHABLE_KEY:?Missing DESKTOP_SUPABASE_PUBLISHABLE_KEY environment secret}"
 
           {
             echo "value<<EOF"
