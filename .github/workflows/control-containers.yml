@@ -244,30 +244,37 @@ jobs:
           tags: tag:control-deploy
           ping: ${{ vars.CONTROL_COOLIFY_TAILSCALE_IP }}
 
-      - name: Authenticate deployment host and pre-pull promoted images
+      - name: Verify Coolify pulls images before stopping containers
         env:
-          BUILD_CHANNEL: ${{ needs.prepare.outputs.build_channel }}
           COOLIFY_TAILSCALE_IP: ${{ vars.CONTROL_COOLIFY_TAILSCALE_IP }}
-          GHCR_TOKEN: ${{ secrets.CONTROL_GHCR_TOKEN }}
-          GHCR_USERNAME: ${{ vars.CONTROL_GHCR_USERNAME }}
+          COOLIFY_TOKEN: ${{ secrets.CONTROL_COOLIFY_TOKEN }}
+          COOLIFY_WEBHOOK: ${{ secrets.CONTROL_COOLIFY_WEBHOOK }}
         shell: bash
         run: |
           set -euo pipefail
           : "${COOLIFY_TAILSCALE_IP:?Missing CONTROL_COOLIFY_TAILSCALE_IP environment variable}"
-          : "${GHCR_TOKEN:?Missing CONTROL_GHCR_TOKEN environment secret}"
-          : "${GHCR_USERNAME:?Missing CONTROL_GHCR_USERNAME environment variable}"
+          : "${COOLIFY_TOKEN:?Missing CONTROL_COOLIFY_TOKEN environment secret}"
+          : "${COOLIFY_WEBHOOK:?Missing CONTROL_COOLIFY_WEBHOOK environment secret}"
 
-          if [[ ! "${GHCR_USERNAME}" =~ ^[A-Za-z0-9-]+$ ]]; then
-            echo "CONTROL_GHCR_USERNAME contains unsupported characters." >&2
+          if [[ ! "${COOLIFY_WEBHOOK}" =~ ^(https://([^/:]+))(/|$) ]]; then
+            echo "CONTROL_COOLIFY_WEBHOOK must use HTTPS." >&2
             exit 1
           fi
+          COOLIFY_ORIGIN="${BASH_REMATCH[1]}"
+          COOLIFY_HOST="${BASH_REMATCH[2]}"
+          APPLICATION_UUID="vc84sokckgkco44wos0o4w8w"
+          APPLICATION_URL="${COOLIFY_ORIGIN}/api/v1/applications/${APPLICATION_UUID}"
 
-          DEPLOY_HOST="root@${COOLIFY_TAILSCALE_IP}"
-          printf '%s' "${GHCR_TOKEN}" | tailscale ssh "${DEPLOY_HOST}" \
-            "docker login ghcr.io --username '${GHCR_USERNAME}' --password-stdin"
+          RESPONSE="$(curl --fail-with-body --silent --show-error \
+            --resolve "${COOLIFY_HOST}:443:${COOLIFY_TAILSCALE_IP}" \
+            --request GET "${APPLICATION_URL}" \
+            --header "Authorization: Bearer ${COOLIFY_TOKEN}")"
+          BUILD_COMMAND="$(jq -er '.docker_compose_custom_build_command' <<<"${RESPONSE}")"
 
-          tailscale ssh "${DEPLOY_HOST}" \
-            "docker pull 'ghcr.io/toji-pastr/control-web:${BUILD_CHANNEL}' && docker pull 'ghcr.io/toji-pastr/control-realtime:${BUILD_CHANNEL}'"
+          if [[ "${BUILD_COMMAND}" != "docker compose pull" ]]; then
+            echo "Refusing to deploy: Coolify must run 'docker compose pull' before removing the running containers." >&2
+            exit 1
+          fi
 
       - name: Trigger allowlisted Control deployment
         id: trigger
