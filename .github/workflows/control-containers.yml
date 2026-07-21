@@ -244,7 +244,33 @@ jobs:
           tags: tag:control-deploy
           ping: ${{ vars.CONTROL_COOLIFY_TAILSCALE_IP }}
 
+      - name: Authenticate deployment host and pre-pull promoted images
+        env:
+          BUILD_CHANNEL: ${{ needs.prepare.outputs.build_channel }}
+          COOLIFY_TAILSCALE_IP: ${{ vars.CONTROL_COOLIFY_TAILSCALE_IP }}
+          GHCR_TOKEN: ${{ secrets.CONTROL_GHCR_TOKEN }}
+          GHCR_USERNAME: ${{ vars.CONTROL_GHCR_USERNAME }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${COOLIFY_TAILSCALE_IP:?Missing CONTROL_COOLIFY_TAILSCALE_IP environment variable}"
+          : "${GHCR_TOKEN:?Missing CONTROL_GHCR_TOKEN environment secret}"
+          : "${GHCR_USERNAME:?Missing CONTROL_GHCR_USERNAME environment variable}"
+
+          if [[ ! "${GHCR_USERNAME}" =~ ^[A-Za-z0-9-]+$ ]]; then
+            echo "CONTROL_GHCR_USERNAME contains unsupported characters." >&2
+            exit 1
+          fi
+
+          DEPLOY_HOST="root@${COOLIFY_TAILSCALE_IP}"
+          printf '%s' "${GHCR_TOKEN}" | tailscale ssh "${DEPLOY_HOST}" \
+            "docker login ghcr.io --username '${GHCR_USERNAME}' --password-stdin"
+
+          tailscale ssh "${DEPLOY_HOST}" \
+            "docker pull 'ghcr.io/toji-pastr/control-web:${BUILD_CHANNEL}' && docker pull 'ghcr.io/toji-pastr/control-realtime:${BUILD_CHANNEL}'"
+
       - name: Trigger allowlisted Control deployment
+        id: trigger
         env:
           COOLIFY_TAILSCALE_IP: ${{ vars.CONTROL_COOLIFY_TAILSCALE_IP }}
           COOLIFY_TOKEN: ${{ secrets.CONTROL_COOLIFY_TOKEN }}
@@ -262,7 +288,59 @@ jobs:
           fi
           COOLIFY_HOST="${BASH_REMATCH[1]}"
 
-          curl --fail-with-body --silent --show-error \
+          RESPONSE="$(curl --fail-with-body --silent --show-error \
             --resolve "${COOLIFY_HOST}:443:${COOLIFY_TAILSCALE_IP}" \
             --request GET "${COOLIFY_WEBHOOK}" \
-            --header "Authorization: Bearer ${COOLIFY_TOKEN}"
+            --header "Authorization: Bearer ${COOLIFY_TOKEN}")"
+          echo "${RESPONSE}"
+
+          DEPLOYMENT_UUID="$(jq -er '.deployments[0].deployment_uuid // .deployment_uuid' <<<"${RESPONSE}")"
+          echo "deployment_uuid=${DEPLOYMENT_UUID}" >> "${GITHUB_OUTPUT}"
+
+      - name: Wait for successful Coolify deployment
+        env:
+          COOLIFY_TAILSCALE_IP: ${{ vars.CONTROL_COOLIFY_TAILSCALE_IP }}
+          COOLIFY_TOKEN: ${{ secrets.CONTROL_COOLIFY_TOKEN }}
+          COOLIFY_WEBHOOK: ${{ secrets.CONTROL_COOLIFY_WEBHOOK }}
+          DEPLOYMENT_UUID: ${{ steps.trigger.outputs.deployment_uuid }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${DEPLOYMENT_UUID:?Missing deployment UUID}"
+
+          if [[ ! "${COOLIFY_WEBHOOK}" =~ ^(https://([^/:]+))(/|$) ]]; then
+            echo "CONTROL_COOLIFY_WEBHOOK must use HTTPS." >&2
+            exit 1
+          fi
+          COOLIFY_ORIGIN="${BASH_REMATCH[1]}"
+          COOLIFY_HOST="${BASH_REMATCH[2]}"
+          DEPLOYMENT_URL="${COOLIFY_ORIGIN}/api/v1/deployments/${DEPLOYMENT_UUID}"
+
+          for attempt in {1..90}; do
+            RESPONSE="$(curl --fail-with-body --silent --show-error \
+              --resolve "${COOLIFY_HOST}:443:${COOLIFY_TAILSCALE_IP}" \
+              --request GET "${DEPLOYMENT_URL}" \
+              --header "Authorization: Bearer ${COOLIFY_TOKEN}")"
+            STATUS="$(jq -er '.status' <<<"${RESPONSE}")"
+            echo "Coolify deployment ${DEPLOYMENT_UUID}: ${STATUS}"
+
+            case "${STATUS}" in
+              finished)
+                exit 0
+                ;;
+              failed|cancelled)
+                jq -r '.logs // "No deployment logs returned."' <<<"${RESPONSE}" >&2
+                exit 1
+                ;;
+              queued|in_progress)
+                sleep 5
+                ;;
+              *)
+                echo "Unexpected Coolify deployment status: ${STATUS}" >&2
+                exit 1
+                ;;
+            esac
+          done
+
+          echo "Timed out waiting for Coolify deployment ${DEPLOYMENT_UUID}." >&2
+          exit 1
