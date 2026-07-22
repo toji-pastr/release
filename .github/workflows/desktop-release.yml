@@ -118,18 +118,25 @@ jobs:
           DESKTOP_SUPABASE_URL: ${{ secrets.DESKTOP_SUPABASE_URL }}
           DESKTOP_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.DESKTOP_SUPABASE_PUBLISHABLE_KEY }}
           DESKTOP_OAUTH_CLIENT_ID: ${{ secrets.DESKTOP_OAUTH_CLIENT_ID }}
-          DESKTOP_AUTH_WEB_BASE_URL: ${{ secrets.DESKTOP_AUTH_WEB_BASE_URL }}
-          DESKTOP_REALTIME_WS_URL: ${{ secrets.DESKTOP_REALTIME_WS_URL }}
         run: |
+          set -euo pipefail
+          CONTROL_ORIGIN="${DESKTOP_API_BASE_URL%/}"
+          if [[ ! "${CONTROL_ORIGIN}" =~ ^https://[^/]+$ ]]; then
+            echo "DESKTOP_API_BASE_URL must be an HTTPS origin." >&2
+            exit 1
+          fi
+          CONTROL_WS_ORIGIN="wss://${CONTROL_ORIGIN#https://}"
+
           cat > ".env.${BUILD_CHANNEL}" <<EOF
           APP_ENV=${BUILD_CHANNEL}
-          API_BASE_URL=${DESKTOP_API_BASE_URL}
+          API_BASE_URL=${CONTROL_ORIGIN}
+          AUTH_WEB_BASE_URL=${CONTROL_ORIGIN}
+          REALTIME_WS_URL=${CONTROL_WS_ORIGIN}/ws/voice
+          REMOTE_CONTROL_WS_URL=${CONTROL_WS_ORIGIN}/ws
           BIFROST_PROXY_URL=${DESKTOP_BIFROST_PROXY_URL}
           NEXT_PUBLIC_SUPABASE_URL=${DESKTOP_SUPABASE_URL}
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${DESKTOP_SUPABASE_PUBLISHABLE_KEY}
           DESKTOP_OAUTH_CLIENT_ID=${DESKTOP_OAUTH_CLIENT_ID}
-          AUTH_WEB_BASE_URL=${DESKTOP_AUTH_WEB_BASE_URL}
-          REALTIME_WS_URL=${DESKTOP_REALTIME_WS_URL}
           NODE_ENV=production
           EOF
 
@@ -207,19 +214,25 @@ jobs:
           DESKTOP_SUPABASE_URL: ${{ secrets.DESKTOP_SUPABASE_URL }}
           DESKTOP_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.DESKTOP_SUPABASE_PUBLISHABLE_KEY }}
           DESKTOP_OAUTH_CLIENT_ID: ${{ secrets.DESKTOP_OAUTH_CLIENT_ID }}
-          DESKTOP_AUTH_WEB_BASE_URL: ${{ secrets.DESKTOP_AUTH_WEB_BASE_URL }}
-          DESKTOP_REALTIME_WS_URL: ${{ secrets.DESKTOP_REALTIME_WS_URL }}
         run: |
           $buildChannel = $env:BUILD_CHANNEL
+          $controlOrigin = $env:DESKTOP_API_BASE_URL.TrimEnd('/')
+          $controlUri = [Uri]$controlOrigin
+          if ($controlUri.Scheme -ne 'https' -or $controlUri.AbsolutePath -ne '/') {
+            throw 'DESKTOP_API_BASE_URL must be an HTTPS origin.'
+          }
+          $controlWsOrigin = "wss://$($controlUri.Authority)"
+
           $envContent = @"
           APP_ENV=$buildChannel
-          API_BASE_URL=$env:DESKTOP_API_BASE_URL
+          API_BASE_URL=$controlOrigin
+          AUTH_WEB_BASE_URL=$controlOrigin
+          REALTIME_WS_URL=$controlWsOrigin/ws/voice
+          REMOTE_CONTROL_WS_URL=$controlWsOrigin/ws
           BIFROST_PROXY_URL=$env:DESKTOP_BIFROST_PROXY_URL
           NEXT_PUBLIC_SUPABASE_URL=$env:DESKTOP_SUPABASE_URL
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$env:DESKTOP_SUPABASE_PUBLISHABLE_KEY
           DESKTOP_OAUTH_CLIENT_ID=$env:DESKTOP_OAUTH_CLIENT_ID
-          AUTH_WEB_BASE_URL=$env:DESKTOP_AUTH_WEB_BASE_URL
-          REALTIME_WS_URL=$env:DESKTOP_REALTIME_WS_URL
           NODE_ENV=production
           "@.Trim()
           $envContent | Set-Content -Path ".env.$buildChannel" -Encoding ascii
