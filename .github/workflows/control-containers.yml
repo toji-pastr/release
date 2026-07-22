@@ -273,7 +273,34 @@ jobs:
           tags: tag:control-deploy
           ping: ${{ vars.CONTROL_COOLIFY_TAILSCALE_IP }}
 
-      - name: Verify Coolify pulls images before stopping containers
+      - name: Authenticate deployment host and pre-pull staging images
+        if: needs.prepare.outputs.build_channel == 'staging'
+        env:
+          BUILD_CHANNEL: ${{ needs.prepare.outputs.build_channel }}
+          COOLIFY_TAILSCALE_IP: ${{ vars.CONTROL_COOLIFY_TAILSCALE_IP }}
+          GHCR_TOKEN: ${{ secrets.CONTROL_GHCR_TOKEN }}
+          GHCR_USERNAME: ${{ vars.CONTROL_GHCR_USERNAME }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${COOLIFY_TAILSCALE_IP:?Missing CONTROL_COOLIFY_TAILSCALE_IP environment variable}"
+          : "${GHCR_TOKEN:?Missing CONTROL_GHCR_TOKEN environment secret}"
+          : "${GHCR_USERNAME:?Missing CONTROL_GHCR_USERNAME environment variable}"
+
+          if [[ ! "${GHCR_USERNAME}" =~ ^[A-Za-z0-9-]+$ ]]; then
+            echo "CONTROL_GHCR_USERNAME contains unsupported characters." >&2
+            exit 1
+          fi
+
+          DEPLOY_HOST="root@${COOLIFY_TAILSCALE_IP}"
+          printf '%s' "${GHCR_TOKEN}" | tailscale ssh "${DEPLOY_HOST}" \
+            "docker login ghcr.io --username '${GHCR_USERNAME}' --password-stdin"
+
+          tailscale ssh "${DEPLOY_HOST}" \
+            "docker pull 'ghcr.io/toji-pastr/control-web:${BUILD_CHANNEL}' && docker pull 'ghcr.io/toji-pastr/control-realtime:${BUILD_CHANNEL}'"
+
+      - name: Verify production Coolify pulls images before stopping containers
+        if: needs.prepare.outputs.build_channel == 'production'
         env:
           COOLIFY_TAILSCALE_IP: ${{ vars.CONTROL_COOLIFY_TAILSCALE_IP }}
           COOLIFY_TOKEN: ${{ secrets.CONTROL_COOLIFY_TOKEN }}
