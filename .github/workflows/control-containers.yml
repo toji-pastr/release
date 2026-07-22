@@ -291,7 +291,11 @@ jobs:
           fi
           COOLIFY_ORIGIN="${BASH_REMATCH[1]}"
           COOLIFY_HOST="${BASH_REMATCH[2]}"
-          APPLICATION_UUID="vc84sokckgkco44wos0o4w8w"
+          APPLICATION_UUID="$(sed -nE 's/.*[?&]uuid=([A-Za-z0-9_-]+).*/\1/p' <<<"${COOLIFY_WEBHOOK}")"
+          if [[ -z "${APPLICATION_UUID}" ]]; then
+            echo "CONTROL_COOLIFY_WEBHOOK must include the target application UUID." >&2
+            exit 1
+          fi
           APPLICATION_URL="${COOLIFY_ORIGIN}/api/v1/applications/${APPLICATION_UUID}"
 
           RESPONSE="$(curl --fail-with-body --silent --show-error \
