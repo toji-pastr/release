@@ -338,7 +338,8 @@ jobs:
           DEPLOYMENT_UUID="$(jq -er '.deployments[0].deployment_uuid // .deployment_uuid' <<<"${RESPONSE}")"
           echo "deployment_uuid=${DEPLOYMENT_UUID}" >> "${GITHUB_OUTPUT}"
 
-      - name: Wait for successful Coolify deployment
+      - name: Wait for successful production Coolify deployment
+        if: needs.prepare.outputs.build_channel == 'production'
         env:
           COOLIFY_TAILSCALE_IP: ${{ vars.CONTROL_COOLIFY_TAILSCALE_IP }}
           COOLIFY_TOKEN: ${{ secrets.CONTROL_COOLIFY_TOKEN }}
@@ -384,4 +385,22 @@ jobs:
           done
 
           echo "Timed out waiting for Coolify deployment ${DEPLOYMENT_UUID}." >&2
+          exit 1
+
+      - name: Verify staging remains healthy after deployment trigger
+        if: needs.prepare.outputs.build_channel == 'staging'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sleep 30
+          for attempt in {1..24}; do
+            if curl --fail --silent --show-error --max-time 10 \
+              https://staging.trycontrol.app/api/health >/dev/null; then
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "Staging did not become healthy after the Coolify deployment trigger." >&2
           exit 1
