@@ -146,6 +146,9 @@ jobs:
           WEB_APP_URL: ${{ secrets.DESKTOP_API_BASE_URL }}
           WEB_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.DESKTOP_SUPABASE_PUBLISHABLE_KEY }}
           WEB_SUPABASE_URL: ${{ secrets.DESKTOP_SUPABASE_URL }}
+          WEB_UMAMI_ENABLED: ${{ needs.prepare.outputs.build_channel == 'production' && '1' || '0' }}
+          WEB_UMAMI_HOST: ${{ needs.prepare.outputs.build_channel == 'production' && 'https://analytics.trycontrol.app' || '' }}
+          WEB_UMAMI_WEBSITE_ID: ${{ needs.prepare.outputs.build_channel == 'production' && '2fa5c035-3759-439f-9670-814686b09417' || '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -153,12 +156,38 @@ jobs:
           : "${WEB_SUPABASE_URL:?Missing DESKTOP_SUPABASE_URL environment secret}"
           : "${WEB_SUPABASE_PUBLISHABLE_KEY:?Missing DESKTOP_SUPABASE_PUBLISHABLE_KEY environment secret}"
 
+          case "${WEB_UMAMI_ENABLED}" in
+            0|1)
+              ;;
+            *)
+              echo "WEB_UMAMI_ENABLED must be 0 or 1." >&2
+              exit 1
+              ;;
+          esac
+
+          if [[ "${WEB_UMAMI_ENABLED}" == "1" ]]; then
+            : "${WEB_UMAMI_HOST:?Missing production Umami host}"
+            : "${WEB_UMAMI_WEBSITE_ID:?Missing production Umami website ID}"
+            if [[ ! "${WEB_UMAMI_HOST}" =~ ^https://[^/]+/?$ ]]; then
+              echo "The production Umami host must be an HTTPS origin without a path." >&2
+              exit 1
+            fi
+            if [[ ! "${WEB_UMAMI_WEBSITE_ID}" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ ]]; then
+              echo "The production Umami website ID must be a UUID." >&2
+              exit 1
+            fi
+          fi
+
           {
             echo "value<<EOF"
             echo "APP_ENV=${APP_ENV}"
             echo "NEXT_PUBLIC_APP_URL=${WEB_APP_URL}"
             echo "NEXT_PUBLIC_SUPABASE_URL=${WEB_SUPABASE_URL}"
             echo "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${WEB_SUPABASE_PUBLISHABLE_KEY}"
+            echo "NEXT_PUBLIC_UMAMI_ENABLED=${WEB_UMAMI_ENABLED}"
+            echo "NEXT_PUBLIC_UMAMI_HOST=${WEB_UMAMI_HOST}"
+            echo "NEXT_PUBLIC_UMAMI_WEBSITE_ID=${WEB_UMAMI_WEBSITE_ID}"
+            echo "NEXT_PUBLIC_UMAMI_ENVIRONMENT=${APP_ENV}"
             echo "EOF"
           } >> "${GITHUB_OUTPUT}"
 
