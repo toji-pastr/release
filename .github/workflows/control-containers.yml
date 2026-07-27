@@ -192,17 +192,17 @@ jobs:
           } >> "${GITHUB_OUTPUT}"
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ vars.CONTROL_GHCR_USERNAME }}
           password: ${{ secrets.CONTROL_GHCR_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build and publish immutable image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: source
           file: source/${{ matrix.dockerfile }}
@@ -224,14 +224,14 @@ jobs:
 
     steps:
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ vars.CONTROL_GHCR_USERNAME }}
           password: ${{ secrets.CONTROL_GHCR_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Promote matching image pair
         env:
