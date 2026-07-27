@@ -146,9 +146,9 @@ jobs:
           WEB_APP_URL: ${{ secrets.DESKTOP_API_BASE_URL }}
           WEB_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.DESKTOP_SUPABASE_PUBLISHABLE_KEY }}
           WEB_SUPABASE_URL: ${{ secrets.DESKTOP_SUPABASE_URL }}
-          WEB_UMAMI_ENABLED: ${{ needs.prepare.outputs.build_channel == 'production' && '1' || '0' }}
-          WEB_UMAMI_HOST: ${{ needs.prepare.outputs.build_channel == 'production' && 'https://analytics.trycontrol.app' || '' }}
-          WEB_UMAMI_WEBSITE_ID: ${{ needs.prepare.outputs.build_channel == 'production' && '2fa5c035-3759-439f-9670-814686b09417' || '' }}
+          WEB_UMAMI_ENABLED: '1'
+          WEB_UMAMI_HOST: 'https://analytics.trycontrol.app'
+          WEB_UMAMI_WEBSITE_ID: '2fa5c035-3759-439f-9670-814686b09417'
         shell: bash
         run: |
           set -euo pipefail
@@ -166,14 +166,14 @@ jobs:
           esac
 
           if [[ "${WEB_UMAMI_ENABLED}" == "1" ]]; then
-            : "${WEB_UMAMI_HOST:?Missing production Umami host}"
-            : "${WEB_UMAMI_WEBSITE_ID:?Missing production Umami website ID}"
+            : "${WEB_UMAMI_HOST:?Missing Umami host for the ${APP_ENV} channel}"
+            : "${WEB_UMAMI_WEBSITE_ID:?Missing Umami website ID for the ${APP_ENV} channel}"
             if [[ ! "${WEB_UMAMI_HOST}" =~ ^https://[^/]+/?$ ]]; then
-              echo "The production Umami host must be an HTTPS origin without a path." >&2
+              echo "The ${APP_ENV} Umami host must be an HTTPS origin without a path." >&2
               exit 1
             fi
             if [[ ! "${WEB_UMAMI_WEBSITE_ID}" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ ]]; then
-              echo "The production Umami website ID must be a UUID." >&2
+              echo "The ${APP_ENV} Umami website ID must be a UUID." >&2
               exit 1
             fi
           fi
