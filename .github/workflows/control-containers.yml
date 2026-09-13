@@ -94,7 +94,7 @@ jobs:
       - name: Check out allowlisted Control source
         uses: actions/checkout@v6
         with:
-          repository: Lstsk/control
+          repository: ${{ secrets.CONTROL_SOURCE_REPOSITORY }}
           token: ${{ secrets.SOURCE_REPO_TOKEN }}
           ref: ${{ steps.inputs.outputs.source_ref }}
           path: source
@@ -132,7 +132,7 @@ jobs:
       - name: Check out allowlisted Control source
         uses: actions/checkout@v6
         with:
-          repository: Lstsk/control
+          repository: ${{ secrets.CONTROL_SOURCE_REPOSITORY }}
           token: ${{ secrets.SOURCE_REPO_TOKEN }}
           ref: ${{ needs.prepare.outputs.source_sha }}
           path: source

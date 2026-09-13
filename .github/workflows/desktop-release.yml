@@ -89,7 +89,7 @@ jobs:
       - name: Checkout private source
         uses: actions/checkout@v6
         with:
-          repository: Lstsk/control
+          repository: ${{ secrets.CONTROL_SOURCE_REPOSITORY }}
           token: ${{ secrets.SOURCE_REPO_TOKEN }}
           ref: ${{ needs.prepare.outputs.source_ref }}
           path: source
@@ -121,7 +121,6 @@ jobs:
         env:
           BUILD_CHANNEL: ${{ needs.prepare.outputs.build_channel }}
           DESKTOP_API_BASE_URL: ${{ secrets.DESKTOP_API_BASE_URL }}
-          DESKTOP_BIFROST_PROXY_URL: ${{ secrets.DESKTOP_BIFROST_PROXY_URL }}
           DESKTOP_SUPABASE_URL: ${{ secrets.DESKTOP_SUPABASE_URL }}
           DESKTOP_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.DESKTOP_SUPABASE_PUBLISHABLE_KEY }}
           DESKTOP_OAUTH_CLIENT_ID: ${{ secrets.DESKTOP_OAUTH_CLIENT_ID }}
@@ -140,7 +139,6 @@ jobs:
           AUTH_WEB_BASE_URL=${CONTROL_ORIGIN}
           REALTIME_WS_URL=${CONTROL_WS_ORIGIN}/ws/voice
           REMOTE_CONTROL_WS_URL=${CONTROL_WS_ORIGIN}/ws
-          BIFROST_PROXY_URL=${DESKTOP_BIFROST_PROXY_URL}
           NEXT_PUBLIC_SUPABASE_URL=${DESKTOP_SUPABASE_URL}
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${DESKTOP_SUPABASE_PUBLISHABLE_KEY}
           DESKTOP_OAUTH_CLIENT_ID=${DESKTOP_OAUTH_CLIENT_ID}
@@ -190,7 +188,7 @@ jobs:
       - name: Checkout private source
         uses: actions/checkout@v6
         with:
-          repository: Lstsk/control
+          repository: ${{ secrets.CONTROL_SOURCE_REPOSITORY }}
           token: ${{ secrets.SOURCE_REPO_TOKEN }}
           ref: ${{ needs.prepare.outputs.source_ref }}
           path: source
@@ -217,7 +215,6 @@ jobs:
         env:
           BUILD_CHANNEL: ${{ needs.prepare.outputs.build_channel }}
           DESKTOP_API_BASE_URL: ${{ secrets.DESKTOP_API_BASE_URL }}
-          DESKTOP_BIFROST_PROXY_URL: ${{ secrets.DESKTOP_BIFROST_PROXY_URL }}
           DESKTOP_SUPABASE_URL: ${{ secrets.DESKTOP_SUPABASE_URL }}
           DESKTOP_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.DESKTOP_SUPABASE_PUBLISHABLE_KEY }}
           DESKTOP_OAUTH_CLIENT_ID: ${{ secrets.DESKTOP_OAUTH_CLIENT_ID }}
@@ -236,7 +233,6 @@ jobs:
           AUTH_WEB_BASE_URL=$controlOrigin
           REALTIME_WS_URL=$controlWsOrigin/ws/voice
           REMOTE_CONTROL_WS_URL=$controlWsOrigin/ws
-          BIFROST_PROXY_URL=$env:DESKTOP_BIFROST_PROXY_URL
           NEXT_PUBLIC_SUPABASE_URL=$env:DESKTOP_SUPABASE_URL
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$env:DESKTOP_SUPABASE_PUBLISHABLE_KEY
           DESKTOP_OAUTH_CLIENT_ID=$env:DESKTOP_OAUTH_CLIENT_ID
