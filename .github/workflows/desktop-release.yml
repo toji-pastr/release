@@ -330,9 +330,14 @@ jobs:
             --include "checksums.txt" \
             --include "manifest.json"
 
+          # latest/ is overwritten in place, so it must not be edge-cached for
+          # hours: the v1.1.7 publish served the v1.1.6 dmg from Cloudflare's
+          # cache (max-age=14400) for the rest of the TTL. Versioned prefixes
+          # are immutable and may keep the default.
           aws s3 sync desktop/release "s3://${R2_BUCKET}/latest/" \
             --endpoint-url "${R2_ENDPOINT_URL}" \
             --delete \
+            --cache-control "public, max-age=120" \
             --exclude "*" \
             --include "*.dmg" \
             --include "*.exe" \
@@ -340,7 +345,30 @@ jobs:
             --include "manifest.json"
 
           aws s3 cp desktop/release/manifest.json "s3://${R2_BUCKET}/manifest.json" \
-            --endpoint-url "${R2_ENDPOINT_URL}"
+            --endpoint-url "${R2_ENDPOINT_URL}" \
+            --cache-control "public, max-age=120"
+
+      # Optional: runs only when both secrets exist (the `secrets` context is
+      # not available in a step `if`, so the script checks them itself).
+      - name: Purge Cloudflare cache for latest/
+        shell: bash
+        env:
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_PURGE_TOKEN: ${{ secrets.CLOUDFLARE_PURGE_TOKEN }}
+          DOWNLOAD_PUBLIC_BASE_URL: ${{ secrets.DOWNLOAD_PUBLIC_BASE_URL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CLOUDFLARE_ZONE_ID:-}" || -z "${CLOUDFLARE_PURGE_TOKEN:-}" ]]; then
+            echo "No Cloudflare purge credentials configured; relying on the short latest/ TTL."
+            exit 0
+          fi
+          base="${DOWNLOAD_PUBLIC_BASE_URL%/}"
+          files=$(ls desktop/release | grep -E '\.(dmg|exe)$|^checksums\.txt$|^manifest\.json$' | sed "s|^|\"${base}/latest/|; s|$|\"|" | paste -sd, -)
+          curl -fsS -X POST "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/purge_cache" \
+            -H "Authorization: Bearer ${CLOUDFLARE_PURGE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "{\"files\":[${files},\"${base}/manifest.json\"]}" | head -c 300
+          echo
 
       - name: Prune old Cloudflare R2 releases
         shell: bash
