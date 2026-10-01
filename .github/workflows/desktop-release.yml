@@ -171,12 +171,26 @@ jobs:
           export APPLE_API_KEY_ID="$APPLE_API_KEY_ID_CLEAN"
           pnpm run dist:mac -- --${{ matrix.arch }}
 
+      # Both mac jobs write latest-mac.yml (the self-update feed); the publish
+      # job merges the two, so each is renamed for its arch first.
+      - name: Name mac update info per arch
+        shell: bash
+        run: |
+          set -euo pipefail
+          info=source/apps/desktop/release/latest-mac.yml
+          if [[ -f "$info" ]]; then
+            mv "$info" "source/apps/desktop/release/latest-mac-${{ matrix.arch }}.yml"
+          fi
+
       - name: Upload mac artifacts
         uses: actions/upload-artifact@v7
         with:
           name: desktop-mac-${{ needs.prepare.outputs.build_channel }}-${{ matrix.arch }}
           path: |
             source/apps/desktop/release/*.dmg
+            source/apps/desktop/release/*.zip
+            source/apps/desktop/release/*.zip.blockmap
+            source/apps/desktop/release/latest-mac-*.yml
           if-no-files-found: error
 
   build-win:
@@ -252,6 +266,8 @@ jobs:
           name: desktop-win-${{ needs.prepare.outputs.build_channel }}
           path: |
             source/apps/desktop/release/*.exe
+            source/apps/desktop/release/*.exe.blockmap
+            source/apps/desktop/release/latest.yml
           if-no-files-found: error
 
   publish-production:
@@ -282,6 +298,9 @@ jobs:
       - name: Create stable download aliases
         run: node scripts/alias-release.mjs desktop/release
 
+      - name: Merge mac update info
+        run: node scripts/merge-mac-update-info.mjs desktop/release
+
       - name: Generate checksums
         run: node scripts/hash-release.mjs desktop/release checksums.txt
 
@@ -294,6 +313,19 @@ jobs:
           test -f desktop/release/System-Audio-Service-arm64.dmg
           test -f desktop/release/System-Audio-Service-x64.dmg
           test -f desktop/release/checksums.txt
+          # Self-update feed (sources from 1.2.1 on). An older source ref has
+          # none, which only means its build cannot be updated to.
+          if [[ -f desktop/release/latest-mac.yml ]]; then
+            test -f desktop/release/System-Audio-Service-arm64.zip
+            test -f desktop/release/System-Audio-Service-x64.zip
+          else
+            echo "::warning::No latest-mac.yml: this release will not reach installed mac apps by self-update."
+          fi
+          if [[ -f desktop/release/latest.yml ]]; then
+            test -f desktop/release/System-Audio-Service-Setup.exe.blockmap
+          else
+            echo "::warning::No latest.yml: this release will not reach installed Windows apps by self-update."
+          fi
 
       - name: Build manifest
         env:
@@ -327,6 +359,9 @@ jobs:
             --exclude "*" \
             --include "*.dmg" \
             --include "*.exe" \
+            --include "*.zip" \
+            --include "*.blockmap" \
+            --include "latest*.yml" \
             --include "checksums.txt" \
             --include "manifest.json"
 
@@ -341,6 +376,9 @@ jobs:
             --exclude "*" \
             --include "*.dmg" \
             --include "*.exe" \
+            --include "*.zip" \
+            --include "*.blockmap" \
+            --include "latest*.yml" \
             --include "checksums.txt" \
             --include "manifest.json"
 
@@ -363,7 +401,7 @@ jobs:
             exit 0
           fi
           base="${DOWNLOAD_PUBLIC_BASE_URL%/}"
-          files=$(ls desktop/release | grep -E '\.(dmg|exe)$|^checksums\.txt$|^manifest\.json$' | sed "s|^|\"${base}/latest/|; s|$|\"|" | paste -sd, -)
+          files=$(ls desktop/release | grep -E '\.(dmg|exe|zip|blockmap)$|^latest.*\.yml$|^checksums\.txt$|^manifest\.json$' | sed "s|^|\"${base}/latest/|; s|$|\"|" | paste -sd, -)
           curl -fsS -X POST "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/purge_cache" \
             -H "Authorization: Bearer ${CLOUDFLARE_PURGE_TOKEN}" \
             -H "Content-Type: application/json" \
