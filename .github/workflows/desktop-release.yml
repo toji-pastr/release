@@ -79,15 +79,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The Intel app builds on the Intel runner until the source's dist:mac
-        # forwards its --arm64/--x64 flag to electron-builder: it dropped it,
-        # so the builder followed the host, and an x64 job on an Apple Silicon
-        # runner packaged arm64. The binary check below fails such a build.
+        # Both architectures build on Apple Silicon runners: the Intel runner
+        # took 12 minutes against 7, and nothing here needs an Intel host.
+        # dist:mac passes --arm64/--x64 to electron-builder (from source
+        # a2328755; before it the builder followed the host), the native
+        # helpers are compiled for both by explicit Swift target triples, and
+        # no native Node addon is packaged. The binary check below fails a
+        # build whose executable is not the matrix's architecture.
         include:
           - os: macos-15
             arch: arm64
             binary_arch: arm64
-          - os: macos-15-intel
+          - os: macos-15
             arch: x64
             binary_arch: x86_64
 
