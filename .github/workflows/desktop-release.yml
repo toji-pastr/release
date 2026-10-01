@@ -79,11 +79,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Both architectures build on Apple Silicon runners: the Intel runner
+        # took 12 minutes against 7, and nothing here needs an Intel host.
+        # electron-builder fetches the x64 Electron, the native helpers are
+        # compiled for both targets by their explicit Swift target triples,
+        # and no native Node addon is packaged. The binary check below keeps
+        # an Intel artifact from ever shipping arm64 code.
         include:
           - os: macos-15
             arch: arm64
-          - os: macos-15-intel
+            binary_arch: arm64
+          - os: macos-15
             arch: x64
+            binary_arch: x86_64
 
     steps:
       - name: Checkout private source
@@ -170,6 +178,23 @@ jobs:
           export APPLE_API_KEY="$APPLE_API_KEY_PATH"
           export APPLE_API_KEY_ID="$APPLE_API_KEY_ID_CLEAN"
           pnpm run dist:mac -- --${{ matrix.arch }}
+
+      - name: Check the app binary architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$(find source/apps/desktop/release -maxdepth 2 -name '*.app' -type d | head -n 1)"
+          if [[ -z "$app" ]]; then
+            echo "No packaged .app found under release/." >&2
+            exit 1
+          fi
+          executable="$app/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")"
+          archs="$(lipo -archs "$executable")"
+          echo "$app: $archs"
+          if [[ "$archs" != "${{ matrix.binary_arch }}" ]]; then
+            echo "Expected ${{ matrix.binary_arch }}, found: $archs" >&2
+            exit 1
+          fi
 
       # Both mac jobs write latest-mac.yml (the self-update feed); the publish
       # job merges the two, so each is renamed for its arch first.
