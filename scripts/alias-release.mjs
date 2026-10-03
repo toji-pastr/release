@@ -9,8 +9,8 @@ if (!releaseDir) {
 }
 
 const macAliases = [
-  { match: /arm64|aarch64/i, name: "System-Audio-Service-arm64.dmg" },
-  { match: /x64|x86_64|intel/i, name: "System-Audio-Service-x64.dmg" },
+  { match: /arm64|aarch64/i, name: "Activity-Monitor-arm64.dmg" },
+  { match: /x64|x86_64|intel/i, name: "Activity-Monitor-x64.dmg" },
 ];
 
 async function main() {
@@ -26,13 +26,19 @@ async function main() {
 
     const sourcePath = path.join(absoluteReleaseDir, dmgName);
     const targetPath = path.join(absoluteReleaseDir, alias.name);
+    // The build already emits the canonical name (electron-builder
+    // artifactName "Activity-Monitor-${arch}.${ext}"), so the match is often
+    // the file itself; copying a file onto itself would error.
+    if (sourcePath === targetPath) {
+      continue;
+    }
     await fs.copyFile(sourcePath, targetPath);
   }
 
   const allowedFiles = new Set([
-    "System-Audio-Service-Setup.exe",
-    "System-Audio-Service-arm64.dmg",
-    "System-Audio-Service-x64.dmg",
+    "Activity-Monitor-Setup.exe",
+    "Activity-Monitor-arm64.dmg",
+    "Activity-Monitor-x64.dmg",
   ]);
 
   const finalEntries = await fs.readdir(absoluteReleaseDir);

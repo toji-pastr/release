@@ -335,20 +335,20 @@ jobs:
         run: |
           set -euo pipefail
           ls -la desktop/release
-          test -f desktop/release/System-Audio-Service-Setup.exe
-          test -f desktop/release/System-Audio-Service-arm64.dmg
-          test -f desktop/release/System-Audio-Service-x64.dmg
+          test -f desktop/release/Activity-Monitor-Setup.exe
+          test -f desktop/release/Activity-Monitor-arm64.dmg
+          test -f desktop/release/Activity-Monitor-x64.dmg
           test -f desktop/release/checksums.txt
           # Self-update feed (sources from 1.2.1 on). An older source ref has
           # none, which only means its build cannot be updated to.
           if [[ -f desktop/release/latest-mac.yml ]]; then
-            test -f desktop/release/System-Audio-Service-arm64.zip
-            test -f desktop/release/System-Audio-Service-x64.zip
+            test -f desktop/release/Activity-Monitor-arm64.zip
+            test -f desktop/release/Activity-Monitor-x64.zip
           else
             echo "::warning::No latest-mac.yml: this release will not reach installed mac apps by self-update."
           fi
           if [[ -f desktop/release/latest.yml ]]; then
-            test -f desktop/release/System-Audio-Service-Setup.exe.blockmap
+            test -f desktop/release/Activity-Monitor-Setup.exe.blockmap
           else
             echo "::warning::No latest.yml: this release will not reach installed Windows apps by self-update."
           fi
